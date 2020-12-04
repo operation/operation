@@ -1,0 +1,93 @@
+-- CISC/CMPE 422/835, Assignment 4, Parts III and IV
+-- NuSMV implementation of non-reusable barrier
+
+MODULE proc(id, inC, lock, N)
+VAR
+  pc : {w1,w2,                              -- program counter labels for work portion of code
+	bc1,bc2,bc3,bc4,bc5};               -- program counter labels for barrier portion of code
+ASSIGN
+  init(pc) := w1;
+  next(pc) := case
+		pc=w1 : {bc1};              -- in work 1
+		                            -- barrier start
+		pc=bc1 & locked : bc1;         -- lock taken; block
+		pc=bc1 & !locked : bc2;        -- lock not taken: get lock, execute collect
+		pc=bc2 : bc3;                  -- inC++
+		pc=bc3 & inC=N : bc4;          -- last process to arrive
+		pc=bc3 & !(inC=N) : bc5;       -- not last process to arrive
+		pc=bc4 : w2;                   -- release lock; leave barrier and advance to work
+                pc=bc5 & inC<N : bc5;          -- not all arrived; wait (release lock, if necessary)
+		pc=bc5 & !(inC<N) : w2;        -- all arrived; advance to work
+		                            -- barrier end		
+		pc=w2 : w2;                 -- in work 2
+		TRUE : pc;
+	       esac;
+  next(inC) := case
+		 (pc=bc2) & inC<N : inC+1;
+		 TRUE : inC;
+	       esac;
+  next(lock) := case
+		  (pc=bc1) & !locked : id;   -- get lock
+		  pc=bc4 : 0;                -- release lock
+		  (pc=bc5) & iHoldLock : 0;  -- release lock
+		  TRUE : lock;
+		esac;
+DEFINE
+  iHoldLock := lock=id;  -- this process holds lock
+  locked := lock>0 & !iHoldLock; -- some other process holds lock
+FAIRNESS
+  running  -- make sure that process always executes eventually
+
+MODULE main
+VAR
+  p1 : process proc(1, inC, lock, N);
+  p2 : process proc(2, inC, lock, N);
+--  p3 : process proc(3, inC, lock, N);  -- uncomment for 3 processes 
+  inC : 0..numProcs;
+  lock : 0..numProcs;
+  FROZENVAR N : 0..numProcs;  -- 'FROZENVAR's cannot be changed
+ASSIGN
+  init(inC) := 0;
+  init(lock) := 0;
+  init(N) := numProcs;
+DEFINE
+  numProcs := 2;  -- change to 'numProcs := 3' for 3 processes
+
+-- Part III, Question 3: complete and uncomment -----------------------------
+allInW1 := p1.pc=w1 & p2.pc=w1;
+allInW2 := p1.pc=w2 & p2.pc=w2;
+atLeastOneInW1 := p1.pc=w1 | p2.pc=w1;
+atLeastOneInW2 := p1.pc=w2 | p2.pc=w2;
+p2InB := p2.pc=bc1 | p2.pc=bc2 | p2.pc=bc3 | p2.pc=bc4 |
+p2.pc=bc5;
+p1InB := p1.pc=bc1 | p1.pc=bc2 | p1.pc=bc3 | p1.pc=bc4 | p1.pc=bc5;
+-- p1InB := <your answer here>;
+
+SPEC NAME Q3a := allInW1
+-- holds 
+
+SPEC NAME Q3b := AF !(atLeastOneInW1 & atLeastOneInW2)
+-- holds
+
+SPEC NAME Q3c := AF (p1.pc=w2 -> (p2InB | p2.pc=w2))
+-- holds
+
+SPEC NAME Q3d := ! (EF(EG(p1InB & p2InB)))
+-- holds
+
+SPEC NAME Q3e := AG (p1InB -> (AF p1.pc=w2))
+-- holds
+
+SPEC NAME Q3f := AG allInW2 & AG (allInW2 -> AG allInW2)
+-- holds
+
+-- Part III, Question 4: complete and uncomment ----------------------------
+SPEC NAME Q4 := EF (p1.pc=w2 & p2.pc=w2)
+
+-- Part IV, Question 5: complete -------------------------------------------
+-- Which properties does the original Java code violate?
+-- <Barrier property>
+
+-- Part IV, Question 6: complete -------------------------------------------
+-- Which properties does the modified Java code violate?
+-- <Deadlock freedom property>
